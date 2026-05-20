@@ -31,13 +31,16 @@ const uploadDir = "/var/uploads"
 // de carrera que corrompan datos.
 
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	filename := r.FormValue("name")
+	filename := filepath.Base(r.FormValue("name"))
 	path := filepath.Join(uploadDir, filename)
-	if _, err := os.Stat(path); err == nil {
-		http.Error(w, "File already exists", http.StatusConflict)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			http.Error(w, "File already exists", http.StatusConflict)
+		} else {
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+		}
 		return
 	}
-	f, _ := os.Create(path)
-	defer f.Close()
 	io.Copy(f, r.Body)
 }

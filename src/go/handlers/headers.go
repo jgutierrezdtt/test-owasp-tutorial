@@ -5,20 +5,26 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 )
 
-// VULNERABLE (punto de inicio del ejercicio):
-// func RedirectHandler(w http.ResponseWriter, r *http.Request) {
-//     next := r.URL.Query().Get("next")
-//     w.Header().Set("Location", next)
-//     w.WriteHeader(http.StatusFound)
-// }
-//
-// Un atacante puede enviar: next=/home%0d%0aSet-Cookie: session=attacker
-// Esto inyecta una cabecera Set-Cookie fraudulenta en la respuesta.
+var allowedRedirects = map[string]bool{
+	"/dashboard": true,
+	"/profile":   true,
+	"/settings":  true,
+}
+
+func sanitizeHeaderValue(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "", "\t", "").Replace(v)
+}
 
 func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	next := r.URL.Query().Get("next")
-	w.Header().Set("Location", next)
+	safe := sanitizeHeaderValue(next)
+	if !allowedRedirects[safe] {
+		http.Error(w, "Destino no permitido", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Location", safe)
 	w.WriteHeader(http.StatusFound)
 }

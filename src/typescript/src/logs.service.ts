@@ -3,20 +3,22 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 
-// VULNERABLE (punto de inicio del ejercicio):
-// logRequest(body: unknown): void {
-//   this.logger.log(JSON.stringify(body));
-// }
-//
-// Si el body contiene { "username": "alice", "password": "s3cr3t" }
-// la contrasena queda en texto plano en los logs.
-// Un atacante con acceso a los logs (SIEM, Splunk, CloudWatch) obtiene credenciales reales.
+const SENSITIVE_FIELDS = new Set(['password', 'token', 'secret', 'authorization', 'cookie']);
 
 @Injectable()
 export class LogsService {
   private readonly logger = new Logger(LogsService.name);
 
+  private redact(body: unknown): unknown {
+    if (typeof body !== 'object' || body === null) return body;
+    const redacted: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+      redacted[k] = SENSITIVE_FIELDS.has(k.toLowerCase()) ? '[REDACTED]' : v;
+    }
+    return redacted;
+  }
+
   logRequest(body: unknown): void {
-    this.logger.log(JSON.stringify(body));
+    this.logger.log(JSON.stringify(this.redact(body)));
   }
 }
