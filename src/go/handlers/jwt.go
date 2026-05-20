@@ -41,6 +41,8 @@ func ParseToken(tokenString string) (*jwt.MapClaims, error) {
 	})
 	if err != nil || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
+	}
+	claims := token.Claims.(jwt.MapClaims)
 	return &claims, nil
 }
 
