@@ -1,0 +1,18 @@
+name: Validate Step 20
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - src/typescript/src/upload.controller.ts
+      - .tutorial/state.env
+      - .tutorial-started
+
+jobs:
+  validate:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/reusable-step.yml
+    with:
+      step_number: '20'

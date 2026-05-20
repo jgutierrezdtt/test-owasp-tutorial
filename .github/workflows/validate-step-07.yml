@@ -1,0 +1,18 @@
+name: Validate Step 07
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - src/java/src/main/java/com/example/api/controller/RedirectController.java
+      - .tutorial/state.env
+      - .tutorial-started
+
+jobs:
+  validate:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/reusable-step.yml
+    with:
+      step_number: '07'

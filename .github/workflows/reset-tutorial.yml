@@ -1,0 +1,28 @@
+name: Reset Tutorial
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reset tutorial to step 0
+        run: bash scripts/tutorial.sh reset
+
+      - name: Commit tutorial reset
+        run: |
+          if git diff --quiet -- README.md .tutorial/state.env .tutorial-started; then
+            echo "No hay cambios que confirmar"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git add -u .tutorial/state.env .tutorial-started
+          git commit -m "progress: tutorial reiniciado [skip ci]"
+          git push
