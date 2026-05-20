@@ -34,6 +34,11 @@ public class XmlController {
     @PostMapping("/parse")
     public ResponseEntity<?> parseXml(@RequestBody String xmlInput) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        factory.setXIncludeAware(false);
+        factory.setExpandEntityReferences(false);
         DocumentBuilder builder = factory.newDocumentBuilder();
         Document doc = builder.parse(new ByteArrayInputStream(xmlInput.getBytes()));
         return ResponseEntity.ok(doc.getDocumentElement().getTagName());

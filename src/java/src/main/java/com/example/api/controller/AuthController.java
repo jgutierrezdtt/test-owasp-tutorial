@@ -31,10 +31,15 @@ public class AuthController {
     // Esto inyecta una linea falsa en los logs que puede confundir a analistas
     // o sistemas SIEM, ocultando actividad maliciosa real.
 
+    private static String sanitizeForLog(String input) {
+        if (input == null) return "";
+        return input.replaceAll("[\\r\\n\\t]", "_");
+    }
+
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestParam String username,
                                    @RequestParam String password) {
-        log.info("Login attempt for user: " + username);
+        log.info("Login attempt for user: {}", sanitizeForLog(username));
         // autenticar usuario...
         return ResponseEntity.ok(Map.of("message", "OK"));
     }
