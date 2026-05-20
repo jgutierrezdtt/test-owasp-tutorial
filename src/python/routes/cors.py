@@ -18,11 +18,15 @@ from fastapi.middleware.cors import CORSMiddleware
 # malicioso haga peticiones autenticadas en nombre del usuario.
 # Los navegadores modernos bloquean esto, pero algunas configuraciones proxy no.
 
+import os
+
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "https://example.com").split(",")]
+
 def configure_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Authorization"],
     )

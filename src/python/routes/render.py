@@ -18,7 +18,11 @@ router = APIRouter()
 # Con: name={{ config.__class__.__init__.__globals__['os'].popen('id').read() }}
 # el atacante ejecuta comandos arbitrarios en el servidor.
 
+from jinja2 import Environment, select_autoescape
+
+env = Environment(autoescape=select_autoescape(["html", "xml"]))
+GREETING_TEMPLATE = env.from_string("Hola {{ name }}!")
+
 @router.get("/greet")
 async def greet(name: str):
-    template = Template(f"Hola {name}!")
-    return {"message": template.render()}
+    return {"message": GREETING_TEMPLATE.render(name=name)}
