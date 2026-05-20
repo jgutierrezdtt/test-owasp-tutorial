@@ -1,7 +1,3 @@
-# Estado del tutorial — se generan en tiempo de ejecucion
-.tutorial/state.env
-.tutorial-started
-
 # Dependencias
 node_modules/
 __pycache__/

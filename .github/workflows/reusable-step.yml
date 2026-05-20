@@ -24,15 +24,19 @@ jobs:
             git add README.md .tutorial/state.env .tutorial-started
             git commit -m "progress: tutorial iniciado [skip ci]"
             git push
+            echo "TUTORIAL_JUST_STARTED=true" >> "$GITHUB_ENV"
           fi
 
       - name: Comprobar codigo del paso ${{ inputs.step_number }}
+        if: env.TUTORIAL_JUST_STARTED != 'true'
         run: bash scripts/tutorial.sh check-only "${{ inputs.step_number }}"
 
       - name: Avanzar estado del tutorial
+        if: env.TUTORIAL_JUST_STARTED != 'true'
         run: bash scripts/tutorial.sh validate-step "${{ inputs.step_number }}"
 
       - name: Commit tutorial state
+        if: env.TUTORIAL_JUST_STARTED != 'true'
         run: |
           if git diff --quiet -- README.md .tutorial/state.env .tutorial-started; then
             echo "No hay cambios de progreso para confirmar"

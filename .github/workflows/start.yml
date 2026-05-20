@@ -7,18 +7,27 @@ on:
 
 jobs:
   start:
-    # Solo ejecutar si el tutorial no ha sido iniciado aun
-    if: hashFiles('.tutorial-started') == ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
+      - name: Comprobar si el tutorial ya esta iniciado
+        id: check
+        run: |
+          if [ -f .tutorial-started ]; then
+            echo "started=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "started=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Start tutorial from step 01
+        if: steps.check.outputs.started == 'false'
         run: bash scripts/tutorial.sh start
 
       - name: Commit tutorial start
+        if: steps.check.outputs.started == 'false'
         run: |
           if git diff --quiet -- README.md .tutorial/state.env .tutorial-started; then
             echo "No hay cambios que confirmar"
