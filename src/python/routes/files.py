@@ -1,22 +1,18 @@
 # src/python/routes/files.py
 # PASO 2: Path Traversal — normalizar ruta real y verificar que esta dentro del directorio permitido
 
-from fastapi import APIRouter
+import os
+
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 router = APIRouter()
 
-# VULNERABLE (punto de inicio del ejercicio):
-# @router.get("/download")
-# async def download_file(filename: str):
-#     path = f"/var/www/public/{filename}"
-#     return FileResponse(path)
-#
-# Un atacante puede enviar: filename=../../etc/passwd
-# El servidor devuelve el archivo de credenciales del sistema.
-
+ALLOWED_DIR = "/var/www/public"
 
 @router.get("/download")
 async def download_file(filename: str):
-    path = f"/var/www/public/{filename}"
-    return FileResponse(path)
+    real = os.path.realpath(os.path.join(ALLOWED_DIR, filename))
+    if not real.startswith(ALLOWED_DIR + os.sep):
+        raise HTTPException(status_code=400, detail="Acceso denegado")
+    return FileResponse(real)
