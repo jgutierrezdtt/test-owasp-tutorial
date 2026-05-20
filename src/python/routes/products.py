@@ -50,7 +50,11 @@ def _find_one(query: dict):
 
 @router.post("/login")
 async def login(body: dict):
-    user = _find_one({"username": body.get("username"), "password": body.get("password")})
+    username = body.get("username")
+    password = body.get("password")
+    if not isinstance(username, str) or not isinstance(password, str):
+        raise HTTPException(status_code=400, detail="username y password deben ser strings")
+    user = _find_one({"username": username, "password": password})
     if user:
         return {"token": "access_granted", "role": user.get("role")}
     raise HTTPException(status_code=401, detail="Credenciales invalidas")

@@ -48,12 +48,14 @@ public class CommentsController {
         return ResponseEntity.ok().build();
     }
 
+import org.springframework.web.util.HtmlUtils;
+
     @GetMapping
     @ResponseBody
     public String getComments() {
         StringBuilder sb = new StringBuilder("<ul>");
         for (String c : comments) {
-            sb.append("<li>").append(c).append("</li>");
+            sb.append("<li>").append(HtmlUtils.htmlEscape(c)).append("</li>");
         }
         sb.append("</ul>");
         return sb.toString();

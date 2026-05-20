@@ -48,10 +48,13 @@ func findOrderByID(id string) *Order {
 
 func GetOrder(w http.ResponseWriter, r *http.Request) {
 	orderID := r.URL.Query().Get("id")
+	authenticatedUserID := r.Header.Get("X-User-ID")
 	order := findOrderByID(orderID)
 	if order == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(order)
+	if order.UserID != authenticatedUserID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
 }
