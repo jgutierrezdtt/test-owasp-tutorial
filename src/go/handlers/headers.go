@@ -15,7 +15,10 @@ var allowedRedirects = map[string]bool{
 }
 
 func sanitizeHeaderValue(v string) string {
-	return strings.NewReplacer("\r", "", "\n", "", "\t", "").Replace(v)
+	if strings.ContainsAny(v, "\r\n\t") {
+		return ""
+	}
+	return v
 }
 
 func RedirectHandler(w http.ResponseWriter, r *http.Request) {
